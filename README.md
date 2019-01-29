@@ -272,6 +272,49 @@ public class LogbackSwingTextareaAppender extends AppenderBase<ILoggingEvent> {
 
 ついでに、SpringBoot起動時のログ全てが独自appenderに流れたわけでもなく、どうも途中からとなる。これもなぜなのか、不明。
 
+## カスタム ClassLoader の作成 -> 断念！
 
+十中八九は、SpringBootおよびSpringのDIによるクラスローダの影響と思われる。
 
+SpringBootではexecutable jarの生成で、Javaエコシステムではよく使われている uber-jar とは異なる、nested-jar 方式を採用している。またSpringBoot用のmaven pluginもそのあたりを考慮しているようだ。
 
+- Spring Boot Reference Guide
+  - https://docs.spring.io/spring-boot/docs/2.1.2.RELEASE/reference/htmlsingle/#executable-jar
+- Spring Boot Maven Plugin – Usage
+  - https://docs.spring.io/spring-boot/docs/2.1.2.RELEASE/maven-plugin/usage.html
+
+簡単に書くと、依存jarを特定フォルダ中にまとめた上で(= nested) jarでパッケージングしている。ではどうやってそれらのjarをロードしているか？というと、そうしたnested jarを見つける特製のClassLoader兼mainランチャーをSpringBootでは提供していて、SpringBoot Maven Plugin がそれをマニフェストのMain Classに埋め込むようにしている。つまり、一見ソースコード上はプログラマの作ったmain()メソッドがあるのでそれが実行されるように見えるのだが、実際にmain()として最初に呼ばれるのは特製ClassLoaderを兼ねたランチャークラスで、それがnestedされたjarをロードできるclass loaderを使ってプログラマが作成したmain()をキックする。
+
+よって、クラスローディングの動きをカスタマイズするには、SpringBoot Maven PluginがデフォルトでマニフェストのMain Classとして仕込む特製class loaderをカスタマイズする、という手法が考えられる。実際に試した人の記事も見つけた。
+
+- Spring Boot Classloader and Class Overriding - DZone Java
+  - https://dzone.com/articles/spring-boot-classloader-and-class-override
+- Spring Boot ClassLoader and Class Override by @dawidkublik
+  - http://dkublik.github.io/spring-boot-class-loader-and-class-override/
+
+ただ、さすがにこれは大仰すぎるし、上の記事でのカスタマイズは今回の趣旨と異なるためそのまま使えるわけでもない。
+
+そもそも SpringBoot で classloader をカスタマイズしたいという要望は、既に出ているのではないか？とぐぐってみると・・・
+
+- Provide support for custom class loader to bridge into LaunchedURLClassLoader · Issue #1668 · spring-projects/spring-boot
+  - https://github.com/spring-projects/spring-boot/issues/1668
+- Fix issue #1668: Added support for custom system class loader to enable loading of various classes that are packaged inside nested jars at the system level by aantono · Pull Request #1669 · spring-projects/spring-boot
+  - https://github.com/spring-projects/spring-boot/pull/1669
+
+無慈悲にも、２つ目のIssue 1669 で以下のように「classloaderのカスタマイズはエッジケース過ぎるので、そのためだけにカスタマイズ可能なclass loaderをメンテナンスすることはできない」と最終的に却下されてしまった・・・。
+
+> We've discussed this today and have decided that this is an edge case that won't be of use to the vast majority of Boot users. As such, we don't want to take on the burden of maintaining the custom class loader. 
+
+## 一旦の結論
+
+以上より、同じJVM内でクラスのstaticフィールドやインスタンスを通じて、SpringBootの内部と外部で情報をやり取りするのは非常に難易度が高いことが判明した。
+
+では望みが無いかというと、そうでもない。
+
+JVM内がclass loader の関係で駄目なら、JVMのさらに外部を中継させれば良い。
+
+例えばhttp port番号なら、それを特定の場所の一時ファイルに書き込んで、それを読み込むのはうまくいきそうだ。
+
+独自appenderなら、例えばネットワークを経由すればどうだろう？ SwingUI側で簡易なテキストベースのserverを起動し、appenderはそれに接続してログ文字列を送り込む。これなら class loader の影響は受けずにうまくいきそうではないか？
+
+というのを、また挑戦してみたい。
