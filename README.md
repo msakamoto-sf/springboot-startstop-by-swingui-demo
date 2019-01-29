@@ -52,6 +52,8 @@ public class MainFrame extends JFrame {
 
 - 77.5 Discover the HTTP Port at Runtime
   - https://docs.spring.io/spring-boot/docs/2.1.2.RELEASE/reference/htmlsingle/#howto-discover-the-http-port-at-runtime
+- Spring Boot - How to get the running port - Stack Overflow
+  - https://stackoverflow.com/questions/30312058/spring-boot-how-to-get-the-running-port
 
 まず、SpringBootの中でhttp portを取得するのは問題なく動かせた。`ApplicationListener<ServletWebServerInitializedEvent>` を実装したBeanを登録して `onApplicationEvent(ServletWebServerInitializedEvent event)` を受けたら、`event.getApplicationContext().getWebServer()` でサーバ情報が取得でき、その中にlistening http port番号がある。よって以下のようなクラスを用意して、`@Service` でSpringBootのDI管理下に置いた。
 
@@ -175,7 +177,100 @@ http-port is 0, skip opening browser.
 
 ## logbackで独自appenderをroot loggerに追加し、SpringBootのログ取得(Give-Up)
 
-(TODO)
+logbackで独自のappenderを作成し、loggerに追加すること自体は(パフォーマンスやスレッドセーフティを考えなければ)難しくない。以下の資料を参考にした。
+
+- https://logback.qos.ch/manual/appenders.html#WriteYourOwnAppender
+- https://logback.qos.ch/manual/appenders_ja.html#WriteYourOwnAppender
+- http://oct.im/how-to-create-logback-loggers-dynamicallypragmatically.html
+
+`JTextArea` のインスタンスを受け取り、そこにログを追記していくappenderを次のように作ってみた。
+
+```
+public class LogbackSwingTextareaAppender extends AppenderBase<ILoggingEvent> {
+    private final JTextArea textarea;
+    private PatternLayoutEncoder encoder;
+
+    public LogbackSwingTextareaAppender(final JTextArea ta) {
+        this.textarea = ta;
+    }
+
+    public PatternLayoutEncoder getEncoder() {
+        return encoder;
+    }
+
+    public void setEncoder(PatternLayoutEncoder encoder) {
+        this.encoder = encoder;
+    }
+
+    @Override
+    protected void append(ILoggingEvent eventObject) {
+        byte[] logdata = this.encoder.encode(eventObject);
+        final String logline = new String(logdata, StandardCharsets.UTF_8) + "\n";
+        SwingUtilities.invokeLater(() -> {
+            textarea.append(logline);
+        });
+    }
+
+    // root loggerに追加するためのショートカットユーティリティメソッド。
+    public static void addToRootLogger(final JTextArea textarea) {
+        LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
+        PatternLayoutEncoder encoder = new PatternLayoutEncoder();
+        encoder.setContext(loggerContext);
+        // pattern はとりあえずハードコードで決め打ち。
+        encoder.setPattern("%d{ISO8601} [%thread] %marker %level %logger - %msg%n");
+        encoder.start();
+        // appender インスタンスを生成して開始する。
+        LogbackSwingTextareaAppender newAppender = new LogbackSwingTextareaAppender(textarea);
+        newAppender.setContext(loggerContext);
+        newAppender.setEncoder(encoder);
+        newAppender.start();
+        // root logger に追加
+        Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+        root.addAppender(newAppender);
+    }
+}
+```
+
+このappender単体では、問題なく動くことを確認している。 **SpringBoot が起動するまでは。**
+以下のように起動前後でSwingUI側でログも出してみたのだが・・・
+
+```
+        menuItemStartSpringBootWebapp.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                final Logger log = LoggerFactory.getLogger(this.getClass());
+                log.info("spring boot starting..."); // これは JTextArea に反映される。
+                springAppContext = SpringApplication.run(MainFrame.class, args);
+                // (...)
+                log.info("spring boot started."); // これが反映されない。SpringBootの起動中に、何かlogbackに仕掛けが入るから？
+            }
+        });
+        // (...)
+        menuItemStopSpringBootWebapp.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                final Logger log = LoggerFactory.getLogger(this.getClass());
+                log.info("spring boot stopping..."); // これも反映されない。謎。
+                springAppContext.close();
+                // (...)
+                log.info("spring boot stopped"); // これも反映されない。謎。
+            }
+        });
+```
+
+コメントに書いたとおり、SpringBoot起動直前の `log.info()` は JTextArea に反映される、つまりこの時点では独自appenderは動いている。
+**一度 SpringBoot が起動してしまうと、なぜか JTextArea に反映されなくなる。**
+一度でも、だから、一度 SpringBoot を起動 -> 停止したあともう一度起動すると、最初は JTextArea に反映された `log.info("spring boot starting...")` のログは二度と反映されなくなる。
+
+試しに `append()` 内部で `System.err.println()` など入れてみると、そちらは正しく出力されているし、内部で JTextArea インスタンスも参照できている(NPEなどは発生していない)
+
+**なんなの！？なに、このキツネにつままれたような謎挙動は！？**
+
+勘弁してくれぇ・・・。
+
+ということで、同じJVM内のクラス・インスタンス間のやり取りによる logger の書き換えは、諦めることにした。
+
+ついでに、SpringBoot起動時のログ全てが独自appenderに流れたわけでもなく、どうも途中からとなる。これもなぜなのか、不明。
 
 
 
