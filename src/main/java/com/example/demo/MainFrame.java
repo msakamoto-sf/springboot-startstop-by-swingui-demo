@@ -20,10 +20,8 @@ import javax.swing.border.EmptyBorder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
 
-@SpringBootApplication
 public class MainFrame extends JFrame {
     private static final long serialVersionUID = 1L;
     private JPanel contentPane;
@@ -92,7 +90,7 @@ public class MainFrame extends JFrame {
             public void actionPerformed(ActionEvent e) {
                 final Logger log = LoggerFactory.getLogger(this.getClass());
                 log.info("spring boot starting..."); // これは JTextArea に反映される。
-                springAppContext = SpringApplication.run(MainFrame.class, args);
+                springAppContext = SpringApplication.run(SpringBootEntryPoint.class, args);
                 menuItemStartSpringBootWebapp.setEnabled(false);
                 menuItemOpenInTheBrowser.setEnabled(true);
                 menuItemStopSpringBootWebapp.setEnabled(true);
@@ -129,5 +127,7 @@ public class MainFrame extends JFrame {
                 log.info("spring boot stopped"); // これも反映されない。謎。
             }
         });
+        final Logger log = LoggerFactory.getLogger(this.getClass());
+        log.info("main frame constructed.");
     }
 }
