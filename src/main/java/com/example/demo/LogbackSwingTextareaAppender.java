@@ -38,22 +38,8 @@ public class LogbackSwingTextareaAppender extends AppenderBase<ILoggingEvent> {
     @Override
     protected void append(ILoggingEvent eventObject) {
         byte[] logdata = this.encoder.encode(eventObject);
-        final String logline = new String(logdata, StandardCharsets.UTF_8) + "\n";
+        final String logline = new String(logdata, StandardCharsets.UTF_8);
         SwingUtilities.invokeLater(() -> {
-            /* 原因がはっきりわからないが、SpringBoot の Controller 内から出力したログについては、
-             * なぜか↓の append() メソッドが画面に反映されない。
-             * 特に例外が出ているわけでもない。
-             * 
-             * GUIのコードからの出力も、SpringBootの初回起動直前は反映されるが、
-             * 一度起動したあとは反映されない。
-             * 
-             * 可能性として考えられるのは、SpringBoot の Controller 内からだとclass loaderが
-             * 専用のものになるので、その影響。
-             * あと、SpringBoot の起動中にlogbackのコンテキストで何か破壊的な変更が発生している可能性。
-             * 
-             * 謎。
-             * 今回は諦める。
-             */
             textarea.append(logline);
         });
     }
