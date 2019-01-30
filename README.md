@@ -1,5 +1,7 @@
 # springboot-swingui-give-up
-SwingUIからSpringBoot webapp の起動・停止を制御しようとしたがいくつかのトラブルで一部ギブアップ。
+~~SwingUIからSpringBoot webapp の起動・停止を制御しようとしたがいくつかのトラブルで一部ギブアップ。~~
+
+-> SwingUIからSpringBoot webappの起動・停止をするデモ。
 
 こだわりポイント：
 - SwingUI上から SpringBoot webapp の起動/停止を制御できる。
@@ -8,12 +10,12 @@ SwingUIからSpringBoot webapp の起動・停止を制御しようとしたが�
   - つまり、ユーザがログなどを目視で確認してポート番号を識別し、自分でURLをブラウザに打ち込む手間をゼロにしたかった。(けど結局できてない)
 - SpringBootのログを、SwingUI上で確認できる。
 
-以下の技術要素に分けて挑戦し、一部ギブアップした。
+以下の技術要素に分けて挑戦し~~、一部ギブアップし~~た。
 1. SwingUI 上から SpringBoot webapp の起動/停止を制御する。
 2. SpringBoot webapp で Servlet Container 起動後に、どのポートでlistenを開始したか取得し、SwingUI側に伝える。
    - ~~一部ギブアップ~~ -> 後述の通り、成功した。
 3. logback の root logger にSwingUIの `JTextArea` にログを追記する appender を追加し、SpringBoot のログをSwingUI側に流し込む。
-   - 一部ギブアップ
+   - ~~一部ギブアップ~~ -> 後述の通り、成功した。
 
 以下、詳細。
 
@@ -211,8 +213,11 @@ public class SpringBootEntryPoint {
 
 これで `HttpPortInitializedListener` のインスタンスが正しく参照され、ポート番号の受け渡しに成功し、デフォルトブラウザで `http://localhost:(ポート番号)/` を開くことが可能になりました。
 
-## logbackで独自appenderをroot loggerに追加し、SpringBootのログ取得(Give-Up)
+## logbackで独自appenderをroot loggerに追加し、SpringBootのログ取得(Give-Up -> Success!!)
 
+最初はうまく動かず断念しましたが、ちょっとしたきっかけで原因が分かり、なんとか対処し成功しました。
+
+### うまく動かず断念したときのログ
 logbackで独自のappenderを作成し、loggerに追加すること自体は(パフォーマンスやスレッドセーフティを考えなければ)難しくない。以下の資料を参考にした。
 
 - https://logback.qos.ch/manual/appenders.html#WriteYourOwnAppender
@@ -308,7 +313,7 @@ public class LogbackSwingTextareaAppender extends AppenderBase<ILoggingEvent> {
 
 ついでに、SpringBoot起動時のログ全てが独自appenderに流れたわけでもなく、どうも途中からとなる。これもなぜなのか、不明。
 
-## カスタム ClassLoader の作成 -> 断念！
+### カスタム ClassLoader の作成 -> 断念！
 
 十中八九は、SpringBootおよびSpringのDIによるクラスローダの影響と思われる。
 
@@ -341,16 +346,86 @@ SpringBootではexecutable jarの生成で、Javaエコシステムではよく�
 
 > We've discussed this today and have decided that this is an edge case that won't be of use to the vast majority of Boot users. As such, we don't want to take on the burden of maintaining the custom class loader. 
 
+### ちょっとした寄り道から原因解明
+
+JVMの外でやり取りさせようとして、logbackでTCP経由のログについて調べてみたら、logbackの場合socket経由でログを送受信できる appender と receiver が用意されてる。
+
+- https://logback.qos.ch/manual/appenders.html
+- https://logback.qos.ch/manual/appenders_ja.html
+- https://logback.qos.ch/manual/receivers.html
+- https://logback.qos.ch/manual/receivers_ja.html
+
+これを試そうと思ったのだが、どうも appender と receiver で設定ファイルが完全に独立させる必要があるっぽい。一つの logback.xml 中にappenderとreceiverを同居させるのは難しそう。
+
+そこで設定周りを見ていくうちに、context という概念が出てきて、設定のドキュメントを見ていると `context.reset();` というサンプルコードが出てきた。
+
+・・・もしかして・・・SpringBootの起動時に、独自にcontextを調整してて、その前にroot logger に追加したappenderになにか影響出ているのでは・・・？？
+
+そこで springboot logback context initialize みたいなキーワードでググってみたところ、以下が見つかった。
+
+- logback - Spring is resetting my logging configuration - how do I work around this? - Stack Overflow
+  - https://stackoverflow.com/questions/28419024/spring-is-resetting-my-logging-configuration-how-do-i-work-around-this
+- Logback configuration is reinitialized for each context created in the application · Issue #6688 · spring-projects/spring-boot
+  - https://github.com/spring-projects/spring-boot/issues/6688
+
+1つ目はまさしく、SpringBoot起動時にlogback設定がリセットされるというIssueだが、これは 1.4 など大分昔の話なので、関係はなさそう。
+
+どんぴしゃりなのが2つ目の記事で、回答としてもそのものズバリな解法が示されている。
+解法としては、SpringBoot起動の途中でlogbackの設定がいじられるなら、それが終わったあたりのeventを捉えて、もう一度再設定するというアプローチ。
+それで実際にやってみたところ、うまく動いてくれた。
+
+まず以下のように `ApplicationContextInitializedEvent` イベントを捉えてroot logger に独自appenderを追加し直すlistenerクラスを用意する。
+
+```
+public class CustomLoggingConfigurationApplicationListener implements SmartApplicationListener {
+    private final JTextArea taLog;
+    public CustomLoggingConfigurationApplicationListener(final JTextArea taLog) {
+        this.taLog = taLog;
+    }
+
+    @Override
+    public void onApplicationEvent(ApplicationEvent event) {
+        LogbackSwingTextareaAppender.addToRootLogger(taLog);
+    }
+
+    @Override
+    public boolean supportsEventType(Class<? extends ApplicationEvent> eventType) {
+        return ApplicationContextInitializedEvent.class.isAssignableFrom(eventType);
+    }
+
+    @Override
+    public boolean supportsSourceType(Class<?> sourceType) {
+        return true;
+    }
+}
+```
+
+stackoverflowの記事では、`getOrder()` も override して順序を調整していたり `ApplicationEnvironmentPreparedEvent` を捉える書き方だったが、実際に試したところ `getOrder()` の override は不要。
+また `ApplicationEnvironmentPreparedEvent` ではタイミングが早すぎたらしく動作せず、`ApplicationContextInitializedEvent` の方がちゃんと動いてくれた。
+
+これを以下のように SpringApplication 起動時にlistenerとして登録する。
+
+```
+springAppContext = new SpringApplicationBuilder(SpringBootEntryPoint.class)
+    .listeners(new CustomLoggingConfigurationApplicationListener(taLog)).run(args);
+```
+
+これでようやく、SpringBootのログを JTextArea に流し込むことが可能となった。(ブート時ロゴや、本当に初期のログは取れないけど、本格的にweb serverが起動してからのログは問題なく取れる)
+
 ## 一旦の結論
 
 ~~以上より、同じJVM内でクラスのstaticフィールドやインスタンスを通じて、SpringBootの内部と外部で情報をやり取りするのは非常に難易度が高いことが判明した。~~ -> ポート番号についてはJVM内でやり取り成功。残るは root logger の問題。
 
-では望みが無いかというと、そうでもない。
+~~では望みが無いかというと、そうでもない。~~
 
-JVM内がclass loader の関係で駄目なら、JVMのさらに外部を中継させれば良い。
+~~JVM内がclass loader の関係で駄目なら、JVMのさらに外部を中継させれば良い。~~
 
 ~~例えばhttp port番号なら、それを特定の場所の一時ファイルに書き込んで、それを読み込むのはうまくいきそうだ。~~ -> そこまでしなくても成功した。
 
-独自appenderなら、例えばネットワークを経由すればどうだろう？ SwingUI側で簡易なテキストベースのserverを起動し、appenderはそれに接続してログ文字列を送り込む。これなら class loader の影響は受けずにうまくいきそうではないか？
+~~独自appenderなら、例えばネットワークを経由すればどうだろう？ SwingUI側で簡易なテキストベースのserverを起動し、appenderはそれに接続してログ文字列を送り込む。これなら class loader の影響は受けずにうまくいきそうではないか？~~
 
-というのを、また挑戦してみたい。
+~~というのを、また挑戦してみたい。~~
+
+## 次のターゲット
+
+launch4j で jre をバンドルしてパッケージングする。
