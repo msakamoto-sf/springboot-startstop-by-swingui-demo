@@ -11,7 +11,7 @@ SwingUIからSpringBoot webapp の起動・停止を制御しようとしたが�
 以下の技術要素に分けて挑戦し、一部ギブアップした。
 1. SwingUI 上から SpringBoot webapp の起動/停止を制御する。
 2. SpringBoot webapp で Servlet Container 起動後に、どのポートでlistenを開始したか取得し、SwingUI側に伝える。
-   - 一部ギブアップ
+   - ~~一部ギブアップ~~ -> 後述の通り、成功した。
 3. logback の root logger にSwingUIの `JTextArea` にログを追記する appender を追加し、SpringBoot のログをSwingUI側に流し込む。
    - 一部ギブアップ
 
@@ -46,7 +46,11 @@ public class MainFrame extends JFrame {
 
 ```
 
-## SpringBoot 起動時に listen http port を SwingUI側に伝える(Give-Up)
+## SpringBoot 起動時に listen http port を SwingUI側に伝える(Give-Up -> Success!!)
+
+最初はうまく動かず断念しましたが、ちょっとしたきっかけで原因が分かり、なんとか対処し成功しました。
+
+### うまく動かず断念したときのログ
 
 以下を参考にしてみたが・・・最終的にうまく動かず、断念した。
 
@@ -174,6 +178,38 @@ http-port is 0, skip opening browser.
 なんで？これ、マジでなんで？
 おそらくあまりにもエッジケースと思われるため、調べようも無い。
 よって、今回はJVMの内部だけでこれを完結させるのを諦めた。
+
+### ちょっとしたきっかけから原因解明
+
+上記で頭を抱えてから二日後、「JVMの内部が駄目なら、外部ファイル経由なら行けるだろう」と、`Files.createTempFile()` で一時ファイルを生成する処理を `MainFrame` のコンストラクタに埋め込みました。また `HttpPortInitializedListener` にそのPathを渡すようにして、setter/getter で試しに Path の toString() 、つまりファイル名をログ出力してみました。
+
+・・・が・・・なぜか、`MainFrame` の中で生成したファイル名と、`HttpPortInitializedListener` の setter/getter が呼び出されたタイミングで出力されるファイル名が違う・・・。
+
+実際、SwingUIからSpringBootを起動した段階で、 `Files.createTempFile()` で生成した一時ファイルが2つ存在する・・・。
+ここでよーくログを見てみると、SpringBoot起動ログの中で MainFrame のコンストラクタ中で生成したファイル名のログ出力が動いていました。
+
+**つまり、`SpringApplication.run(MainFrame.class, args);` の中でもう一度 MainFrame のコンストラクタが呼ばれていたのです。**
+
+このためコンストラクタ中の次のコードがもう一度実行され、元の MainFrame インスタンスからは参照できない別の `HttpPortInitializedListener` が `StaticGlobalRefs` にセットされてしまっていた・・・。という次第。
+
+```
+        HttpPortInitializedListener httpPortInitializedListener = new HttpPortInitializedListener();
+        StaticGlobalRefs.setHttpPortInitializedListener(httpPortInitializedListener);
+```
+
+また、おそらくですが MainFrame に `@SpringBootApplication` アノテーションを設定していたので、Beanとして自動生成されてしまったのかもしれません。
+
+### 対処法
+
+以下のような空のクラスを作成し、それを `SpringApplication.run()` に渡すようにしました。また `@SpringBootApplication` もこちらに移しています。
+
+```
+@SpringBootApplication
+public class SpringBootEntryPoint {
+}
+```
+
+これで `HttpPortInitializedListener` のインスタンスが正しく参照され、ポート番号の受け渡しに成功し、デフォルトブラウザで `http://localhost:(ポート番号)/` を開くことが可能になりました。
 
 ## logbackで独自appenderをroot loggerに追加し、SpringBootのログ取得(Give-Up)
 
@@ -307,13 +343,13 @@ SpringBootではexecutable jarの生成で、Javaエコシステムではよく�
 
 ## 一旦の結論
 
-以上より、同じJVM内でクラスのstaticフィールドやインスタンスを通じて、SpringBootの内部と外部で情報をやり取りするのは非常に難易度が高いことが判明した。
+~~以上より、同じJVM内でクラスのstaticフィールドやインスタンスを通じて、SpringBootの内部と外部で情報をやり取りするのは非常に難易度が高いことが判明した。~~ -> ポート番号についてはJVM内でやり取り成功。残るは root logger の問題。
 
 では望みが無いかというと、そうでもない。
 
 JVM内がclass loader の関係で駄目なら、JVMのさらに外部を中継させれば良い。
 
-例えばhttp port番号なら、それを特定の場所の一時ファイルに書き込んで、それを読み込むのはうまくいきそうだ。
+~~例えばhttp port番号なら、それを特定の場所の一時ファイルに書き込んで、それを読み込むのはうまくいきそうだ。~~ -> そこまでしなくても成功した。
 
 独自appenderなら、例えばネットワークを経由すればどうだろう？ SwingUI側で簡易なテキストベースのserverを起動し、appenderはそれに接続してログ文字列を送り込む。これなら class loader の影響は受けずにうまくいきそうではないか？
 
