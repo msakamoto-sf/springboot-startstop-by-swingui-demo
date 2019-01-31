@@ -459,3 +459,11 @@ AdoptOpenJDKをバンドルする例：
 上記例だと "adopt-openjdk-hs-8u192-b12-win-x64\bin" の下のjavaw.exeが起動される。厳密にJREだけをバンドルして配布するなら "Bundled JRE path" には "jre" だけを指定すべきかもしれない。
 
 なお "Bundled JRE path" はあくまでも path なので、"jre\bin\javaw.exe" みたいに java(w).exe ファイル名まで指定しても正しくJREを検出してくれなかった。
+
+### Launch4j 参考
+
+- http://launch4j.sourceforge.net/
+- launch4jで、Javaプログラム(.jar)をexeファイルでラップする - Symfoware
+  - https://symfoware.blog.fc2.com/blog-entry-1020.html
+- JavaアプリをExe化するLaunch4jの使い方と仕組み - seraphyの日記
+  - https://seraphy.hatenablog.com/entry/20130810/p1
