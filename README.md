@@ -16,6 +16,7 @@
    - ~~一部ギブアップ~~ -> 後述の通り、成功した。
 3. logback の root logger にSwingUIの `JTextArea` にログを追記する appender を追加し、SpringBoot のログをSwingUI側に流し込む。
    - ~~一部ギブアップ~~ -> 後述の通り、成功した。
+4. Launch4j を使ってビルドしたexecutable jarをexe化し、ダブルクリックで実行可能とした上でJREのバンドルも可能にする。
 
 以下、詳細。
 
@@ -426,6 +427,35 @@ springAppContext = new SpringApplicationBuilder(SpringBootEntryPoint.class)
 
 ~~というのを、また挑戦してみたい。~~
 
-## 次のターゲット
+## Launch4j を使ってビルドしたexecutable jarをexe化し、ダブルクリックで実行可能とした上でJREのバンドルも可能に(Success)
 
-launch4j で jre をバンドルしてパッケージングする。
+Launch4j のWindows版をDLしてデスクトップGUI版(launch4j.exe)を起動する。(今回は launch4j-3.12-win32 を使用)
+
+最低限の設定:
+
+- "Basic" タブの "Output file" で適当なexeファイル名を指定。相対パスなら、ユーザの "ドキュメント" (Document) の下に生成される。
+- "Basic" タブの "Jar" に読み込ませる executable jar ファイル名を指定。
+- "JRE" タブの "Min JRE version" に必要とするJREの最低バージョンを指定。
+
+今回の例：
+
+![Basicタブの例](doc/l4j-demo-setting-01.png)
+
+![JREタブの例](doc/l4j-demo-setting-02.png)
+
+JREのバンドル:
+
+- JREのバンドルを可能にするといっても、exeの中にJREを埋め込むとか、JREを含んだzipを作るとか、あるいはインストーラを作るわけではない。
+- Launch4j はあくまでもexeの生成に専念して、ラッパーexeの中のJRE/JDK探索パスにカスタムの相対 or 絶対でのJREパスを指定できる仕組みとなっている。
+- このため、生成したexeとバンドルしたいJREの配布については、開発者自身が別途zipでまとめるなどする必要がある。
+- 最近のシステムであれば "64-bit" をONにするのを忘れずに。
+
+AdoptOpenJDKをバンドルする例：
+
+![JREタブでAdoptOpenJDKの相対パスを指定する例](doc/l4j-demo-setting-03.png)
+
+![実際の配置例](doc/l4j-demo-setting-04.png)
+
+上記例だと "adopt-openjdk-hs-8u192-b12-win-x64\bin" の下のjavaw.exeが起動される。厳密にJREだけをバンドルして配布するなら "Bundled JRE path" には "jre" だけを指定すべきかもしれない。
+
+なお "Bundled JRE path" はあくまでも path なので、"jre\bin\javaw.exe" みたいに java(w).exe ファイル名まで指定しても正しくJREを検出してくれなかった。
