@@ -1,7 +1,7 @@
-# springboot-swingui-give-up
+# springboot-startstop-by-swingui-demo
 ~~SwingUIからSpringBoot webapp の起動・停止を制御しようとしたがいくつかのトラブルで一部ギブアップ。~~
 
--> SwingUIからSpringBoot webappの起動・停止をするデモ。
+-> SwingUIからSpringBoot webappの起動・停止を制御するデモ。
 
 こだわりポイント：
 - SwingUI上から SpringBoot webapp の起動/停止を制御できる。
