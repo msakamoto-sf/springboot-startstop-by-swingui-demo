@@ -9,10 +9,10 @@
     <relativePath/> <!-- lookup parent from repository -->
   </parent>
   <groupId>com.example</groupId>
-  <artifactId>springboot-swingui-give-up</artifactId>
+  <artifactId>springboot-startstop-by-swingui-demo</artifactId>
   <version>0.0.1-SNAPSHOT</version>
-  <name>springboot-swingui-give-up</name>
-  <description>Try to controll SpringBoot webapp start/stop from SwingUI But Give-up cause of some troubles.</description>
+  <name>springboot-startstop-by-swingui-demo</name>
+  <description>sample swingui demo which controlls SpringBoot webapp start/stop</description>
 
   <properties>
     <java.version>1.8</java.version>
